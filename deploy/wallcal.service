@@ -1,0 +1,17 @@
+# Installed by scripts/install-service.sh, which fills in __USER__ and __DIR__.
+[Unit]
+Description=E-ink wall calendar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/.venv/bin/python -m wallcal run
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

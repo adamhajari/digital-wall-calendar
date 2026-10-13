@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wall Calendar</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --card: #fffdf8; --ink: #23211e; --muted: #77716a; --line: #e3ddd2;
+    --accent: #a82e2a; --ok: #36664a; --warn: #b07d10; --err: #a82e2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1b19; --card: #262421; --ink: #ece7de; --muted: #a39c92; --line: #3a3732; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font: 700 26px/1.1 Georgia, "Times New Roman", serif; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); }
+  .chip::before { content: "●"; margin-right: 6px; color: var(--ok); }
+  .chip.warn::before { color: var(--warn); } .chip.err::before { color: var(--err); }
+  .frame { margin: 16px 0; background: #8a8378; padding: 10px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .frame img { display: block; width: 100%; height: auto; border-radius: 3px; background: #e2e0d6; min-height: 120px; }
+  .frame.portrait { max-width: 560px; margin-left: auto; margin-right: auto; }
+  .nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .nav .label { font: 700 20px Georgia, serif; min-width: 170px; text-align: center; }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--card); border: 1px solid var(--line); padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .spacer { flex: 1; }
+  .banner { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--card); border: 1px dashed var(--line); font-size: 14px; color: var(--muted); }
+  .error { color: var(--err); white-space: pre-wrap; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row label { flex: 1; }
+  select, input[type=text], input[type=number], input[type=month] {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; max-width: 200px; }
+  input[type=number] { width: 80px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
+  .color-btn { display: flex; padding: 5px; border-radius: 50%; }
+  .color-btn .dot, .picker button { width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); }
+  .color-btn .dot { display: inline-block; }
+  .picker { padding: 4px 0 10px; }
+  .picker-group { margin-bottom: 10px; }
+  .picker-group h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .picker-group h3 span { font-weight: 400; }
+  .picker-swatches { display: grid; grid-template-columns: repeat(8, 28px); gap: 8px; }
+  .picker button { width: 28px; height: 28px; padding: 0; position: relative; }
+  .picker button:hover { transform: scale(1.12); }
+  .picker button[aria-pressed=true]::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center;
+    color: #fff; font-weight: 700; font-size: 15px; text-shadow: 0 0 2px rgba(0,0,0,.6); }
+  .picker button.light[aria-pressed=true]::after { color: #222; text-shadow: none; }
+  .picker-note { font-size: 12px; color: var(--muted); }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .card-head select, .card-head button { font-size: 13px; }
+  .card-head button { padding: 4px 10px; }
+  .palette-menu { display: flex; gap: 6px; }
+  .preview-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; padding: 8px 10px;
+    border-radius: 8px; border: 1px dashed var(--line); font-size: 13px; color: var(--muted); }
+  .preview-bar span { flex: 1; }
+  .preview-bar button { font-size: 13px; padding: 4px 10px; }
+  .color-change { display: flex; align-items: center; gap: 6px; padding: 5px; color: var(--muted); }
+  .color-change .dot { display: inline-block; width: 18px; height: 18px; border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); }
+  .color-change .from { opacity: .45; }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 16px; }
+  .meta code { font-size: 12px; }
+  .meta a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Wall Calendar</h1>
+    <div class="chips"><span id="chip-sync" class="chip">…</span><span id="chip-panel" class="chip">…</span></div>
+  </header>
+
+  <div id="frame" class="frame"><img id="preview" alt="Preview of what the panel shows"></div>
+
+  <div class="nav">
+    <button data-nav="prev" aria-label="Previous month">‹ Prev</button>
+    <span class="label" id="month-label">…</span>
+    <button data-nav="next" aria-label="Next month">Next ›</button>
+    <button data-nav="today" class="primary">Today</button>
+    <input type="month" id="month-input" aria-label="Jump to month">
+    <span class="spacer"></span>
+    <button id="btn-sync">Sync now</button>
+    <button id="btn-refresh" title="Redraw the e-ink panel even if nothing changed">Redraw panel</button>
+  </div>
+  <div id="banner" class="banner" hidden></div>
+  <div id="errors" class="error"></div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Display</h2>
+      <div class="row"><label for="s-title">Title above month</label><input type="text" id="s-title" data-setting="title" placeholder="e.g. The Smith Family"></div>
+      <div class="row"><label for="s-orientation">Orientation</label><select id="s-orientation" data-setting="orientation"></select></div>
+      <div class="row"><label for="s-week_start">Week starts on</label><select id="s-week_start" data-setting="week_start"></select></div>
+      <div class="row"><label for="s-time_format">Time format</label><select id="s-time_format" data-setting="time_format"></select></div>
+      <div class="row"><label for="s-accent_color">Accent color</label><select id="s-accent_color" data-setting="accent_color"></select></div>
+      <div class="row"><label for="s-event_text_size">Event text size</label><select id="s-event_text_size" data-setting="event_text_size"></select></div>
+      <div class="row"><label for="s-wrap_event_titles">Wrap long event titles onto two lines</label><input type="checkbox" id="s-wrap_event_titles" data-setting="wrap_event_titles"></div>
+      <div class="row"><label for="s-show_event_times">Show event times</label><input type="checkbox" id="s-show_event_times" data-setting="show_event_times"></div>
+      <div class="row"><label for="s-show_mini_months">Mini calendars in header</label><input type="checkbox" id="s-show_mini_months" data-setting="show_mini_months"></div>
+      <div class="row"><label for="s-show_adjacent_events">Events on prev/next month days</label><input type="checkbox" id="s-show_adjacent_events" data-setting="show_adjacent_events"></div>
+      <div class="row"><label for="s-margin_sides">Extra margin left &amp; right (px)</label><input type="number" min="0" max="300" step="4" id="s-margin_sides" data-setting="margin_sides"></div>
+      <div class="row"><label for="s-margin_top_bottom">Extra margin top &amp; bottom (px)</label><input type="number" min="0" max="300" step="4" id="s-margin_top_bottom" data-setting="margin_top_bottom"></div>
+      <div class="row"><label for="s-return_to_today_minutes">Return to current month after (min, 0 = never)</label><input type="number" min="0" id="s-return_to_today_minutes" data-setting="return_to_today_minutes"></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Calendars</h2><div class="palette-menu"><select id="palette" aria-label="Choose a palette"></select>
+        <button type="button" id="btn-preview-palette" disabled>Preview</button></div></div>
+      <div id="preview-bar"></div>
+      <div id="calendars"></div>
+    </section>
+  </div>
+
+  <div class="meta" id="meta"></div>
+</main>
+
+<script>
+let state = null, imageVersion = -1, editing = false, openPicker = null;
+let chosenPalette = "", previewPalette = null;  // dropdown choice; palette being previewed (not yet saved)
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const data = await res.json();
+  if (!res.ok) { showError(data.error || res.statusText); return null; }
+  showError("");
+  return data;
+}
+function showError(msg) { document.getElementById("errors").textContent = msg; }
+function ago(iso) {
+  if (!iso) return "never";
+  const s = Math.round((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  return new Date(iso).toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+}
+function fillSelect(el, options, value) {
+  if (el.options.length !== options.length)
+    el.innerHTML = options.map(o => `<option value="${o}">${o.replace("-", " ")}</option>`).join("");
+  el.value = value;
+}
+
+function render(s) {
+  state = s;
+  document.getElementById("month-label").textContent = s.month_label;
+  document.getElementById("month-input").value = s.month;
+
+  const sync = document.getElementById("chip-sync");
+  if (s.source === "sample") { sync.className = "chip warn"; sync.textContent = "Sample data"; }
+  else if (s.sync_error) { sync.className = "chip err"; sync.textContent = "Sync failing"; }
+  else { sync.className = "chip"; sync.textContent = "Synced " + ago(s.last_sync); }
+  const panel = document.getElementById("chip-panel");
+  panel.className = "chip" + (s.display_error ? " err" : s.display_state !== "idle" ? " warn" : "");
+  panel.textContent = s.display_error ? "Panel error" :
+    s.display_state === "refreshing" ? "Panel refreshing…" :
+    s.display_state === "pending" ? "Panel update queued" : "Panel up to date";
+
+  const banner = document.getElementById("banner");
+  banner.hidden = s.is_current;
+  if (!s.is_current) {
+    const mins = s.returns_to_today_in == null ? null : Math.ceil(s.returns_to_today_in / 60);
+    banner.textContent = `Showing ${s.month_label}. ` +
+      (mins == null ? "Press Today to go back to the current month." : `Returns to the current month in ${mins} min.`);
+  }
+
+  const errs = [s.sync_error && "Sync: " + s.sync_error, s.render_error && "Render: " + s.render_error,
+                s.display_error && "Panel: " + s.display_error].filter(Boolean);
+  if (errs.length) showError(errs.join("\n"));
+
+  if (s.image_version !== imageVersion) {
+    imageVersion = s.image_version;
+    document.getElementById("preview").src = "/preview.png?v=" + imageVersion;
+  }
+  document.getElementById("frame").classList.toggle("portrait", s.settings.orientation.startsWith("portrait"));
+
+  if (!editing) {
+    for (const el of document.querySelectorAll("[data-setting]")) {
+      const key = el.dataset.setting, val = s.settings[key];
+      if (el.tagName === "SELECT") fillSelect(el, s.choices[key], val);
+      else if (el.type === "checkbox") el.checked = val;
+      else if (document.activeElement !== el) el.value = val;
+    }
+    renderCalendars(s);
+  }
+  document.getElementById("meta").innerHTML =
+    `Source: <code>${s.source}</code> · Display: <code>${s.backend}</code>${s.dev ? " · dev mode (renderer reloads on save)" : ""}` +
+    ` · ${s.event_count} events loaded · Last panel refresh: ${ago(s.last_refresh)}` +
+    ` · <a href="/preview.png?raw=1" target="_blank">raw image</a>`;
+}
+
+function renderPalettes(s) {
+  const current = id => { const c = s.settings.calendar_colors[id] || s.calendars.find(c => c.id === id).color;
+                          return s.color_aliases[c] || c; };
+  const match = s.palettes.find(p => Object.entries(p.colors).every(([id, c]) => current(id) === c));
+  const selected = chosenPalette || (match ? match.id : "");
+  document.getElementById("palette").innerHTML =
+    `<option value="" disabled ${selected ? "" : "selected"}>Choose a palette…</option>` +
+    s.palettes.map(p => `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${p.label}${p === match ? " (current)" : ""}</option>`).join("");
+  document.getElementById("btn-preview-palette").disabled = !selected || !!previewPalette;
+  const preview = s.palettes.find(p => p.id === previewPalette);
+  document.getElementById("preview-bar").innerHTML = !preview ? "" : `<div class="preview-bar">
+    <span>Previewing <b>${preview.label}</b>. Nothing changes until you apply it.</span>
+    <button type="button" class="primary" data-palette-apply>Apply</button>
+    <button type="button" data-palette-cancel>Cancel</button></div>`;
+}
+
+function renderCalendars(s) {
+  renderPalettes(s);
+  const hidden = new Set(s.settings.hidden_calendars);
+  const box = document.getElementById("calendars");
+  if (!s.calendars.length) { box.innerHTML = "<p>No calendars configured.</p>"; return; }
+  box.innerHTML = s.calendars.map((c, i) => {
+    let color = s.settings.calendar_colors[c.id] || c.color;
+    color = s.color_aliases[color] || color;
+    const label = n => n.replace("-", " ");
+    const sw = s.swatches[color];
+    const holidays = c.kind === "holidays";
+    const hint = {"Solid ink": "crispest", "Two inks": "fine pattern", "Three inks": "fine pattern, least exact"};
+    const swatch = o => {
+      const tip = `${label(o)}: ${s.swatches[o].recipe}`;
+      return `<button type="button" data-cal-pick="${i}" data-color="${o}" title="${tip}" aria-label="${tip}"
+        aria-pressed="${o === color}" class="${["white", "citron", "banana"].includes(o) ? "light" : ""}"
+        style="background:${s.swatches[o].google}"></button>`;
+    };
+    const picker = openPicker !== i ? "" : `<div class="picker" role="group" aria-label="Color for ${c.name}">` +
+      (holidays ? s.holiday_color_groups : s.color_groups).map(g => `<div class="picker-group">
+        <h3>${g.title} <span>· ${hint[g.title]}</span></h3>
+        <div class="picker-swatches">${g.names.map(swatch).join("")}</div></div>`).join("") +
+      `<div class="picker-note">${holidays ? "Holidays are small text, so only solid inks are offered." :
+        "The panel mixes its six inks in a fine pattern to make most of these. Hover a color to see its recipe."}</div></div>`;
+    const preview = s.palettes.find(p => p.id === previewPalette);
+    if (preview) {
+      const next = preview.colors[c.id];
+      const same = next === color;
+      return `<div class="row">
+        <label><input type="checkbox" data-cal-visible="${i}" ${hidden.has(c.id) ? "" : "checked"}>
+          ${c.name}${c.kind === "holidays" ? " <small>(holidays)</small>" : ""}</label>
+        <span class="color-change" title="${same ? label(color) + " (unchanged)" : label(color) + " → " + label(next)}">
+          ${same ? "" : `<span class="dot from" style="background:${sw.google}"></span>→`}
+          <span class="dot" style="background:${s.swatches[next].google}"></span> ${label(next)}</span></div>`;
+    }
+    return `<div class="row">
+      <label><input type="checkbox" data-cal-visible="${i}" ${hidden.has(c.id) ? "" : "checked"}>
+        ${c.name}${c.kind === "holidays" ? " <small>(holidays)</small>" : ""}</label>
+      <button type="button" class="color-btn" data-cal-open="${i}" aria-expanded="${openPicker === i}"
+        title="${label(color)}" aria-label="Color for ${c.name}: ${label(color)}"><span class="dot" style="background:${sw.google}"></span></button></div>${picker}`;
+  }).join("");
+}
+
+async function refresh() {
+  try { const s = await api("/api/status"); if (s) render(s); }
+  catch (e) { showError("Can't reach the calendar server."); }
+}
+
+document.querySelectorAll("[data-nav]").forEach(b =>
+  b.addEventListener("click", async () => { const s = await api("/api/view", {action: b.dataset.nav}); if (s) render(s); }));
+document.getElementById("month-input").addEventListener("change", async e => {
+  if (!e.target.value) return;
+  const s = await api("/api/view", {action: "set", month: e.target.value}); if (s) render(s);
+});
+document.getElementById("btn-sync").addEventListener("click", async () => { const s = await api("/api/sync", {}); if (s) render(s); });
+document.getElementById("btn-refresh").addEventListener("click", async () => { const s = await api("/api/refresh", {}); if (s) render(s); });
+
+async function saveSetting(key, value) {
+  const s = await api("/api/settings", {[key]: value}); if (s) render(s);
+}
+let textTimer;
+document.querySelectorAll("[data-setting]").forEach(el => {
+  const key = el.dataset.setting;
+  if (el.type === "text") {
+    el.addEventListener("input", () => { clearTimeout(textTimer); textTimer = setTimeout(() => saveSetting(key, el.value), 800); });
+  } else {
+    el.addEventListener("change", () => saveSetting(key, el.type === "checkbox" ? el.checked : el.value));
+  }
+});
+document.getElementById("calendars").addEventListener("change", e => {
+  const s = state; if (!s) return;
+  if (e.target.dataset.calVisible !== undefined) {
+    const id = s.calendars[+e.target.dataset.calVisible].id;
+    const hidden = new Set(s.settings.hidden_calendars);
+    e.target.checked ? hidden.delete(id) : hidden.add(id);
+    saveSetting("hidden_calendars", [...hidden]);
+  }
+});
+document.getElementById("palette").addEventListener("change", e => {
+  chosenPalette = e.target.value;
+  if (previewPalette) previewPalette = chosenPalette;  // already previewing: switch to the new choice
+  if (state) renderCalendars(state);
+});
+document.getElementById("btn-preview-palette").addEventListener("click", () => {
+  if (!state || !chosenPalette) return;
+  previewPalette = chosenPalette; openPicker = null;
+  renderCalendars(state);
+});
+document.getElementById("preview-bar").addEventListener("click", async e => {
+  const p = state && state.palettes.find(p => p.id === previewPalette);
+  if (e.target.closest("[data-palette-apply]") && p) {
+    previewPalette = null; chosenPalette = "";
+    await saveSetting("calendar_colors", p.colors);
+  } else if (e.target.closest("[data-palette-cancel]")) {
+    previewPalette = null; chosenPalette = "";
+    renderCalendars(state);
+  }
+});
+document.getElementById("calendars").addEventListener("click", e => {
+  const s = state; if (!s) return;
+  const open = e.target.closest("[data-cal-open]"), pick = e.target.closest("[data-cal-pick]");
+  if (open) {
+    openPicker = openPicker === +open.dataset.calOpen ? null : +open.dataset.calOpen;
+    renderCalendars(s);
+  } else if (pick) {
+    const id = s.calendars[+pick.dataset.calPick].id;
+    openPicker = null;
+    saveSetting("calendar_colors", {...s.settings.calendar_colors, [id]: pick.dataset.color});
+  }
+});
+document.addEventListener("focusin", e => { editing = !!e.target.closest(".card select"); });
+document.addEventListener("focusout", () => { editing = false; });
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

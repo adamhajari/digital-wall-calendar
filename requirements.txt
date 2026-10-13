@@ -1,0 +1,7 @@
+# Everything except the panel driver (enough to develop on a laptop).
+Pillow>=10.1
+Flask>=3.0
+waitress>=3.0
+requests>=2.31
+google-auth>=2.20
+google-auth-oauthlib>=1.0

@@ -1,0 +1,4 @@
+# On the Raspberry Pi: the common requirements plus Pimoroni's Inky driver
+# (which pulls in numpy, spidev, smbus2, gpiod and gpiodevice).
+-r requirements.txt
+inky>=2.1

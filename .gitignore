@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+secrets/
+config.toml
+preview.png
+
+# Credentials, wherever they end up
+service_account*.json
+client_secret*.json
+token.json
+*.pem
+*.key
+.env
+.env.*
+
+# Local / OS clutter
+.req.sha256
+.DS_Store
+.vscode/
+.idea/

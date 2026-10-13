@@ -1,0 +1,63 @@
+# Copy to config.toml and edit. config.toml is per-machine and never deployed,
+# so the Pi and your laptop each keep their own.
+#
+# Display options you change often (orientation, colors, week start, ...) are
+# set from the web control panel instead and saved in data/settings.json.
+
+# IANA timezone, e.g. "America/New_York". Empty = the machine's timezone.
+timezone = ""
+
+[display]
+backend = "inky"            # "inky" on the Pi; "preview" writes data/panel.png instead
+buttons = true              # side buttons: A = prev month, B = next, C = today, D = sync + redraw
+button_pins = [5, 6, 25, 24]  # Impression 13.3" (other Impressions use 16 for button C)
+# Optional buttons on the frame (docs/frame-buttons.md): [left, right]. Empty = none.
+# Left: press = prev month, hold = today. Right: press = next month, hold = sync + redraw.
+frame_button_pins = []      # e.g. [4, 18] with the wiring in docs/frame-buttons.md
+hold_seconds = 1.0          # how long a hold is
+power_off_hold_seconds = 3  # hold both frame buttons this long to shut the Pi down; 0 = off
+min_refresh_seconds = 60    # never refresh the panel more often than this
+debounce_seconds = 1        # wait this long after the last click before refreshing
+# panel_command_delay = 0         # 13.3" pause between panel commands; -1 = driver's 0.3 s each (~7.5 s slower)
+# panel_power_command_delay = 0.3 # ...between power-on and refresh; the panel skips the refresh without it
+
+[google]
+source = "google"           # "google", or "sample" for made-up events
+auth = "service_account"    # "service_account" (recommended) or "oauth"
+service_account_file = "secrets/service_account.json"
+# oauth_client_file = "secrets/client_secret.json"
+# oauth_token_file = "secrets/token.json"
+poll_seconds = 60           # how often to check Google for new/changed events
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+# One block per calendar. Colors use Google Calendar's names: radicchio, tomato,
+# citron, basil, blueberry, grape, cherry-blossom, tangerine, avocado, eucalyptus,
+# lavender, cocoa, pumpkin, mango, pistachio, peacock, wisteria, graphite,
+# flamingo, banana, sage, cobalt, amethyst, birch, plus black and white. The panel
+# only has six inks, so most are approximated with a fine pattern of two or three
+# inks. The old names (red, blue, green, yellow, orange, purple, teal, burgundy)
+# still work. Easiest is to pick colors from the web control panel.
+# Leave out `color` to get the next color from a default palette chosen to look
+# good together (holiday calendars default to tomato red).
+# Find a calendar's ID in Google Calendar > Settings > (calendar) > Integrate calendar.
+# Your main calendar's ID is your Gmail address.
+
+[[calendars]]
+id = "you@gmail.com"
+name = "Me"
+color = "blue"
+
+# [[calendars]]
+# id = "abc123...@group.calendar.google.com"
+# name = "Family"
+# color = "green"
+
+# Public holidays, printed in small italics next to the date like a paper calendar.
+[[calendars]]
+id = "en.usa#holiday@group.v.calendar.google.com"
+name = "US Holidays"
+color = "red"
+kind = "holidays"
