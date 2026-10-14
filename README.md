@@ -37,7 +37,7 @@ docs/               optional hardware guides
 You need Python 3.11 or newer.
 
 ```bash
-cd digital_wall_calendar
+cd digital-wall-calendar
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
