@@ -16,7 +16,7 @@ Turn them on in `config.toml` on the Pi, under `[display]`:
 
 ```toml
 buttons = true
-frame_button_pins = [4, 18]   # [left, right]
+frame_button_pins = [18, 4]   # [left, right]
 hold_seconds = 1.0            # how long a hold is
 power_off_hold_seconds = 3    # hold both this long to shut down; 0 = off
 ```
@@ -65,12 +65,12 @@ two Qw/ST connectors. Labels are printed beside it. Read top to bottom:
 | 1 | 3V3 | — | Nothing |
 | 2 | SDA | GPIO 2 | Nothing. The panel uses it to identify itself. |
 | 3 | SCL | GPIO 3 | Nothing, same reason |
-| 4 | GP4 | GPIO 4 | **Left** button |
-| 5 | GND | — | **Left** button |
+| 4 | GP4 | GPIO 4 | **Right** button |
+| 5 | GND | — | **Right** button |
 | 6 | TX | GPIO 14 | Nothing |
 | 7 | RX | GPIO 15 | Nothing |
-| 8 | GP18 | GPIO 18 | **Right** button |
-| 9 | GND | — | **Right** button |
+| 8 | GP18 | GPIO 18 | **Left** button |
+| 9 | GND | — | **Left** button |
 | 10 | 5V | — | Nothing |
 
 Each button uses a GPIO pin and the GND pin directly below it, so no shared ground wire is needed. TX and
@@ -92,11 +92,11 @@ either lead can go to either side.
 Inky header                                        Frame buttons
 -----------                                        -------------
  4  GP4   -- jumper -- [lever connector] -- lead --+
-                                                   Left button
+                                                   Right button
  5  GND   -- jumper -- [lever connector] -- lead --+
 
  8  GP18  -- jumper -- [lever connector] -- lead --+
-                                                   Right button
+                                                   Left button
  9  GND   -- jumper -- [lever connector] -- lead --+
 ```
 
@@ -106,8 +106,8 @@ Inky header                                        Frame buttons
 3. **Join each lead to a jumper** with the inline lever connectors (strip each button lead to 10 mm, lift
    the lever, insert, close). Each connector holds two joins, so use one connector per button.
 4. **Plug the jumpers into the header:**
-   - **Left** button: one jumper into **GP4** (pin 4), the other into **GND** (pin 5)
-   - **Right** button: one jumper into **GP18** (pin 8), the other into **GND** (pin 9)
+   - **Left** button: one jumper into **GP18** (pin 8), the other into **GND** (pin 9)
+   - **Right** button: one jumper into **GP4** (pin 4), the other into **GND** (pin 5)
 5. **Label the jumpers.** Tape a small flag on each one, so the Inky can be unplugged and everything
    plugged back in correctly.
 
@@ -128,7 +128,7 @@ Inky header                                        Frame buttons
 
 ## Testing
 
-Check each button with the Pi's own tools before relying on the software. For each pin (4 and 18), turn on
+Check each button with the Pi's own tools before relying on the software. For each pin (18 and 4), turn on
 its pull-up, then read it while holding the button down and again after letting go:
 
 ```
@@ -141,7 +141,7 @@ It should read `hi` when released and `lo` when pressed. Repeat with 18.
 Then restart wallcal (`sudo systemctl restart wallcal`) and watch the log with `journalctl -u wallcal -f`.
 Each press logs `Button left pressed` or `Button right held`, and so on.
 
-If the right button does nothing and the log shows `Could not set up buttons`, check that
+If the left button does nothing and the log shows `Could not set up buttons`, check that
 `/boot/firmware/config.txt` has no `dtoverlay=pwm` line using GPIO 18. A PWM overlay on that pin keeps it
 busy.
 

@@ -13,7 +13,7 @@ buttons = true              # side buttons: A = prev month, B = next, C = today,
 button_pins = [5, 6, 25, 24]  # Impression 13.3" (other Impressions use 16 for button C)
 # Optional buttons on the frame (docs/frame-buttons.md): [left, right]. Empty = none.
 # Left: press = prev month, hold = today. Right: press = next month, hold = sync + redraw.
-frame_button_pins = []      # e.g. [4, 18] with the wiring in docs/frame-buttons.md
+frame_button_pins = []      # e.g. [18, 4] with the wiring in docs/frame-buttons.md
 hold_seconds = 1.0          # how long a hold is
 power_off_hold_seconds = 3  # hold both frame buttons this long to shut the Pi down; 0 = off
 min_refresh_seconds = 60    # never refresh the panel more often than this
