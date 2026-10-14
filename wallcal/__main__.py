@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import signal
 import subprocess
@@ -80,6 +81,13 @@ def cmd_run(cfg, args) -> None:
     display = make_display(cfg.backend, cfg.data_dir, cfg.panel_command_delay, cfg.panel_power_command_delay)
     ctl = Controller(cfg, make_source(cfg), display,
                      SettingsStore(cfg.data_dir / "settings.json"), dev=args.dev)
+    app = create_app(ctl)
+    # Optional photo mode: delete wallcal/photos/ to remove it. (Checking .origin skips a
+    # leftover folder holding only __pycache__, which would import as an empty package.)
+    if (spec := importlib.util.find_spec(f"{__package__}.photos")) and spec.origin:
+        from .photos import install as install_photos
+
+        install_photos(ctl, app, cfg)
     ctl.start()
     if cfg.buttons:
         def prev(): ctl.navigate("prev")
@@ -99,7 +107,7 @@ def cmd_run(cfg, args) -> None:
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # clean exit under systemd
     port = args.port or cfg.port
     print(f"\n  Control panel: http://localhost:{port}\n", flush=True)
-    serve(create_app(ctl), cfg.host, port)
+    serve(app, cfg.host, port)
 
 
 def power_off(ctl) -> None:

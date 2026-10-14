@@ -22,6 +22,7 @@ import time
 from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 from PIL import Image
 
@@ -30,7 +31,7 @@ from . import render as render_mod
 from .config import Config
 from .display import Display, to_panel_orientation
 from .models import Event
-from .settings import CHOICES, SettingsStore
+from .settings import CHOICES, Settings, SettingsStore
 from .sources import EventSource
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,35 @@ def _fmt_when(dt: datetime) -> str:
     return f"{dt:%b} {dt.day}, {dt.hour % 12 or 12}:{dt.minute:02d}{'a' if dt.hour < 12 else 'p'}"
 
 
+class AltScreen(Protocol):
+    """Something that can take over the panel instead of the calendar (e.g. wallcal.photos).
+
+    Optional: the controller works the same without one. Call settings_changed() when
+    something that affects its picture changes, so the panel redraws.
+    """
+
+    name: str
+
+    def active(self) -> bool:
+        """True while it, not the calendar, should be on the panel."""
+        ...
+
+    def render_key(self, settings: Settings):
+        """Changes whenever the picture would (called about once a second while active)."""
+        ...
+
+    def render(self, settings: Settings) -> Image.Image:
+        """The logical (as-seen-on-the-wall) image, drawn only in the panel's pure inks."""
+        ...
+
+    def navigate(self, action: str) -> bool:
+        """Handle a prev/next/today press while active; False lets the calendar have it."""
+        ...
+
+    def status(self) -> dict:
+        ...
+
+
 class Controller:
     def __init__(self, cfg: Config, source: EventSource, display: Display,
                  settings: SettingsStore, dev: bool = False):
@@ -68,6 +98,7 @@ class Controller:
         self.display = display
         self.settings = settings
         self.dev = dev
+        self.alt_screen: AltScreen | None = None
 
         self._lock = threading.RLock()
         self._wake = threading.Event()
@@ -139,6 +170,10 @@ class Controller:
 
     def navigate(self, action: str, month: str | None = None) -> None:
         """action: prev | next | today | set (with month='YYYY-MM')."""
+        alt = self._active_alt()
+        if alt and action != "set" and alt.navigate(action):
+            self.settings_changed()
+            return
         with self._lock:
             t = self.today()
             current = (t.year, t.month)
@@ -180,6 +215,9 @@ class Controller:
             self._note_input()
         self._wake.set()
 
+    def _active_alt(self) -> AltScreen | None:
+        return self.alt_screen if self.alt_screen and self.alt_screen.active() else None
+
     def _note_input(self) -> None:
         """A person asked for a change (call with the lock held)."""
         self._user_change = True
@@ -202,7 +240,10 @@ class Controller:
             returns_in = None
             if self.view and s.return_to_today_minutes:
                 returns_in = max(0, int(self._view_set_at + s.return_to_today_minutes * 60 - time.monotonic()))
+            alt = self._active_alt()
             return {
+                "screen": alt.name if alt else "calendar",
+                "alt_screen": self.alt_screen.status() if self.alt_screen else None,
                 "month": f"{y:04d}-{m:02d}",
                 "month_label": f"{calendar.month_name[m]} {y}",
                 "is_current": self.view is None,
@@ -316,6 +357,9 @@ class Controller:
         if self.dev:
             self._reload_renderer_if_changed()
         s = self.settings.get()
+        if alt := self._active_alt():
+            self._render_alt(alt, s)
+            return
         with self._lock:
             if self.last_sync_attempt is None:
                 return  # don't overwrite the panel with an empty month before the first sync
@@ -350,9 +394,33 @@ class Controller:
                 self.render_error = f"{type(e).__name__}: {e}"
             return
 
+        log.info("Rendered %04d-%02d (%d events)", y, m, len(events))
+        self._show(img, s, force, urgent)
+
+    def _render_alt(self, alt: AltScreen, s: Settings) -> None:
+        with self._lock:
+            key = ("alt", alt.name, alt.render_key(s), s.orientation)
+            urgent = self._user_change
+            self._user_change = False
+            if key == self._render_key:
+                return
+            self._render_key = key
+            force = self._force_next
+            self._force_next = False
+        try:
+            img = alt.render(s)
+        except Exception as e:
+            log.exception("%s render failed", alt.name)
+            with self._lock:
+                self.render_error = f"{type(e).__name__}: {e}"
+            return
+        log.info("Rendered %s", alt.name)
+        self._show(img, s, force, urgent)
+
+    def _show(self, img: Image.Image, s: Settings, force: bool, urgent: bool) -> None:
+        """Queue a rendered image for the panel and update the web previews."""
         panel_img = to_panel_orientation(img, s.orientation)
         digest = hashlib.sha256(panel_img.tobytes()).hexdigest()
-        log.info("Rendered %04d-%02d (%d events)", y, m, len(events))
         if force or digest != self.displayed_hash:
             self._request_display(panel_img, digest, force, urgent)
         # The web previews come after the panel request: on a Pi Zero they take ~half a second.

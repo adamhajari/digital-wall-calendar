@@ -1,0 +1,142 @@
+{# Photo library card, included in the control panel's settings grid. Also holds the
+   styles and script for photos/mode.html. #}
+<style>
+  .ph-modebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .ph-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--card); }
+  .ph-seg button { border: 0; border-radius: 0; padding: 6px 16px; background: transparent; }
+  .ph-seg button + button { border-left: 1px solid var(--line); }
+  .ph-seg button[aria-pressed=true] { background: var(--accent); color: #fff; }
+  .ph-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ph-nav[hidden] { display: none; }
+  .ph-now { font-size: 14px; color: var(--muted); }
+  #photos-card { grid-column: 1 / -1; }
+  .ph-upload { display: inline-block; font-size: 13px; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #fff; }
+  .ph-upload input { display: none; }
+  .ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+  .ph-tile { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
+  .ph-tile.off img { opacity: .4; }
+  .ph-tile.current { outline: 3px solid var(--accent); outline-offset: -1px; }
+  .ph-tile img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+  .ph-tile .ph-pick { position: absolute; top: 6px; left: 6px; display: flex; align-items: center; gap: 5px; font-size: 12px;
+    padding: 2px 7px 2px 4px; border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, transparent); }
+  .ph-tile .ph-badge { position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 2px 7px; border-radius: 6px;
+    background: var(--accent); color: #fff; }
+  .ph-tile .ph-foot { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 13px; }
+  .ph-tile .ph-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-tile .ph-foot button { font-size: 12px; padding: 3px 8px; }
+  .ph-empty { color: var(--muted); font-size: 14px; }
+  .ph-status { font-size: 13px; color: var(--muted); margin-left: 8px; }
+</style>
+
+<section class="card" id="photos-card">
+  <div class="card-head">
+    <h2>Photos <span class="ph-status" id="ph-status"></span></h2>
+    <label class="ph-upload">Upload photos<input type="file" id="ph-file" accept="image/*" multiple></label>
+  </div>
+  <div class="row"><label for="ph-fit">Fit</label>
+    <select id="ph-fit" data-ph-setting="fit">
+      <option value="fill">Fill (crop edges)</option>
+      <option value="fit">Whole photo</option>
+    </select></div>
+  <div class="row"><label for="ph-boost">Color boost</label>
+    <select id="ph-boost" data-ph-setting="boost">
+      <option value="natural">Natural</option>
+      <option value="vivid">Vivid</option>
+      <option value="extra">Extra vivid</option>
+    </select></div>
+  <div class="row"><label for="ph-interval">Change photo every (min, 0 = never)</label>
+    <input type="number" min="0" max="10080" id="ph-interval" data-ph-setting="interval_minutes"></div>
+  <div class="ph-grid" id="ph-grid"></div>
+  <p class="picker-note">Ticked photos take turns on the panel in photo mode. The panel always starts on
+    the calendar when it boots. Its buttons work in photo mode too: A/B previous and next photo, C back to the calendar.</p>
+</section>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]);
+  let ph = null, gridKey = "";
+
+  async function post(path, body, method = "POST") {
+    // api() and render() belong to the main page.
+    if (method === "POST") { const s = await api(path, body); if (s) render(s); return; }
+    const res = await fetch(path, {method});
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || res.statusText); return; }
+    showError(""); render(data);
+  }
+
+  function fmtMins(secs) {
+    const m = Math.ceil(secs / 60);
+    return m < 90 ? `${m} min` : `${Math.round(m / 60)} h`;
+  }
+
+  document.addEventListener("wallcal:status", e => {
+    ph = e.detail.alt_screen;
+    if (!ph) return;
+    const on = ph.active;
+    document.querySelectorAll("[data-ph-mode]").forEach(b =>
+      b.setAttribute("aria-pressed", String((b.dataset.phMode === "photos") === on)));
+    $("ph-nav").hidden = !on;
+    const current = ph.photos.find(p => p.id === ph.current);
+    const selected = ph.photos.filter(p => p.selected).length;
+    $("ph-now").textContent = !on || !current ? "" :
+      `${current.name} · ${ph.photos.filter(p => p.selected).indexOf(current) + 1} of ${selected}` +
+      (ph.next_in != null ? ` · next in ${fmtMins(ph.next_in)}` : "");
+    $("ph-status").textContent = ph.photos.length ? `· ${selected} of ${ph.photos.length} chosen` : "";
+
+    for (const el of document.querySelectorAll("[data-ph-setting]"))
+      if (document.activeElement !== el) el.value = ph.settings[el.dataset.phSetting];
+
+    const key = JSON.stringify([ph.photos, ph.current, on]);
+    if (key === gridKey) return;  // don't rebuild (and flash) the thumbnails on every poll
+    gridKey = key;
+    $("ph-grid").innerHTML = !ph.photos.length ? `<p class="ph-empty">No photos yet. Upload a few to get started.</p>` :
+      ph.photos.map(p => `<div class="ph-tile${p.selected ? "" : " off"}${on && p.id === ph.current ? " current" : ""}">
+        <img src="/photos/${p.id}/thumb.jpg" alt="${esc(p.name)}" loading="lazy">
+        <label class="ph-pick"><input type="checkbox" data-ph-select="${p.id}" ${p.selected ? "checked" : ""}> Show</label>
+        ${on && p.id === ph.current ? `<span class="ph-badge">On panel</span>` : ""}
+        <div class="ph-foot"><span class="ph-name" title="${esc(p.name)}">${esc(p.name)}</span>
+          <button type="button" data-ph-show="${p.id}" title="Put this photo on the panel now">Show now</button>
+          <button type="button" data-ph-delete="${p.id}" aria-label="Delete ${esc(p.name)}" title="Delete">✕</button></div>
+      </div>`).join("");
+  });
+
+  document.querySelectorAll("[data-ph-mode]").forEach(b => b.addEventListener("click", () => {
+    if (!ph || (b.dataset.phMode === "photos") === ph.active) return;
+    post("/api/photos/mode", {mode: b.dataset.phMode});
+  }));
+  document.querySelectorAll("[data-ph-step]").forEach(b =>
+    b.addEventListener("click", () => post("/api/photos/step", {direction: b.dataset.phStep})));
+
+  $("ph-grid").addEventListener("change", e => {
+    const id = e.target.dataset.phSelect;
+    if (id) post(`/api/photos/${id}`, {selected: e.target.checked});
+  });
+  $("ph-grid").addEventListener("click", e => {
+    const show = e.target.closest("[data-ph-show]"), del = e.target.closest("[data-ph-delete]");
+    if (show) post(`/api/photos/${show.dataset.phShow}`, {show: true});
+    if (del && confirm("Delete this photo?")) post(`/api/photos/${del.dataset.phDelete}`, undefined, "DELETE");
+  });
+  document.querySelectorAll("[data-ph-setting]").forEach(el => el.addEventListener("change", () =>
+    post("/api/photos/settings", {[el.dataset.phSetting]: el.value})));
+
+  $("ph-file").addEventListener("change", async e => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    const form = new FormData();
+    files.forEach(f => form.append("photos", f));
+    $("ph-status").textContent = `· uploading ${files.length} photo${files.length > 1 ? "s" : ""}…`;
+    try {
+      const res = await fetch("/api/photos/upload", {method: "POST", body: form});
+      const data = await res.json();
+      if (!res.ok) showError(data.error || res.statusText);
+      else { showError(data.warning || ""); render(data); }
+    } catch (err) {
+      showError("Upload failed: " + err);
+    }
+    e.target.value = "";
+  });
+})();
+</script>

@@ -70,6 +70,7 @@
   .color-change .dot { display: inline-block; width: 18px; height: 18px; border-radius: 50%;
     border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); }
   .color-change .from { opacity: .45; }
+  body.alt-screen .cal-only { display: none !important; }
   .meta { font-size: 13px; color: var(--muted); margin-top: 16px; }
   .meta code { font-size: 12px; }
   .meta a { color: inherit; }
@@ -81,15 +82,17 @@
     <h1>Wall Calendar</h1>
     <div class="chips"><span id="chip-sync" class="chip">…</span><span id="chip-panel" class="chip">…</span></div>
   </header>
+  {# Optional add-ons include their UI here if installed (see wallcal/photos/). #}
+  {% include "photos/mode.html" ignore missing %}
 
   <div id="frame" class="frame"><img id="preview" alt="Preview of what the panel shows"></div>
 
   <div class="nav">
-    <button data-nav="prev" aria-label="Previous month">‹ Prev</button>
-    <span class="label" id="month-label">…</span>
-    <button data-nav="next" aria-label="Next month">Next ›</button>
-    <button data-nav="today" class="primary">Today</button>
-    <input type="month" id="month-input" aria-label="Jump to month">
+    <button data-nav="prev" class="cal-only" aria-label="Previous month">‹ Prev</button>
+    <span class="label cal-only" id="month-label">…</span>
+    <button data-nav="next" class="cal-only" aria-label="Next month">Next ›</button>
+    <button data-nav="today" class="primary cal-only">Today</button>
+    <input type="month" id="month-input" class="cal-only" aria-label="Jump to month">
     <span class="spacer"></span>
     <button id="btn-sync">Sync now</button>
     <button id="btn-refresh" title="Redraw the e-ink panel even if nothing changed">Redraw panel</button>
@@ -120,6 +123,7 @@
       <div id="preview-bar"></div>
       <div id="calendars"></div>
     </section>
+    {% include "photos/card.html" ignore missing %}
   </div>
 
   <div class="meta" id="meta"></div>
@@ -153,6 +157,9 @@ function fillSelect(el, options, value) {
 
 function render(s) {
   state = s;
+  // Something other than the calendar (e.g. photos) is on the panel.
+  document.body.classList.toggle("alt-screen", s.screen !== "calendar");
+  document.dispatchEvent(new CustomEvent("wallcal:status", {detail: s}));
   document.getElementById("month-label").textContent = s.month_label;
   document.getElementById("month-input").value = s.month;
 
@@ -167,7 +174,7 @@ function render(s) {
     s.display_state === "pending" ? "Panel update queued" : "Panel up to date";
 
   const banner = document.getElementById("banner");
-  banner.hidden = s.is_current;
+  banner.hidden = s.is_current || s.screen !== "calendar";
   if (!s.is_current) {
     const mins = s.returns_to_today_in == null ? null : Math.ceil(s.returns_to_today_in / 60);
     banner.textContent = `Showing ${s.month_label}. ` +

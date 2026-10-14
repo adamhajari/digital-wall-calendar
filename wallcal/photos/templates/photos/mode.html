@@ -1,0 +1,12 @@
+{# Photo mode switch, included under the header of the control panel. #}
+<div class="ph-modebar">
+  <div class="ph-seg" role="group" aria-label="What the panel shows">
+    <button type="button" data-ph-mode="calendar" aria-pressed="true">Calendar</button>
+    <button type="button" data-ph-mode="photos" aria-pressed="false">Photos</button>
+  </div>
+  <div class="ph-nav" id="ph-nav" hidden>
+    <button type="button" data-ph-step="prev" aria-label="Previous photo">‹ Prev</button>
+    <span class="ph-now" id="ph-now"></span>
+    <button type="button" data-ph-step="next" aria-label="Next photo">Next ›</button>
+  </div>
+</div>

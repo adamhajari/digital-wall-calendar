@@ -11,6 +11,8 @@ driven by a **Raspberry Pi Zero 2 W**, designed to look like a printed paper wal
   month after 30 minutes. You can change that in the control panel.
 - The panel's side buttons: **A** previous month, **B** next month, **C** today, **D** sync and redraw.
   You can also add [two buttons on the frame](docs/frame-buttons.md).
+- Optional **photo mode**: upload photos in the control panel and show them on the panel instead of
+  the calendar. See [section 6](#6-optional-photo-mode).
 - On a laptop, it runs the same code with a **live preview** instead of the panel.
 
 ```
@@ -20,6 +22,7 @@ wallcal/            the app (python package)
   sources.py        Google Calendar + sample data
   display.py        Inky panel / preview backends
   web.py, templates/index.html   control panel
+  photos/           optional photo mode (self-contained; delete the folder to remove it)
   fonts/            bundled OFL fonts
 config.example.toml copy to config.toml
 deploy/             systemd unit
@@ -245,6 +248,34 @@ To test it, run `sudo reboot`. The control panel should come back within a minut
 
 If a matboard hides the panel's own buttons, you can add two buttons on the side of the frame. See
 [docs/frame-buttons.md](docs/frame-buttons.md). No soldering needed.
+
+---
+
+## 6. Optional: photo mode
+
+The panel can show your photos instead of the calendar. Everything for this lives in `wallcal/photos/`.
+
+- **Upload**: in the control panel's **Photos** card, click **Upload photos**. You can pick several at
+  once. JPEG, PNG and WebP work. iPhones convert HEIC photos to JPEG when you upload from Safari. The
+  Pi keeps a resized copy (2000 px on the longest side) in `data/photos/`, not the original.
+- **Choose**: tick **Show** on the photos you want. Ticked photos take turns in upload order, changing
+  every 60 minutes by default. Set the interval to 0 to change photos only when you ask. **Show now**
+  puts a photo on the panel straight away.
+- **Switch**: use the **Calendar / Photos** switch at the top of the control panel. The panel always
+  starts on the calendar when the Pi boots. The calendar keeps syncing in photo mode, so switching
+  back is instant.
+- **Buttons** in photo mode: **A**/**B** show the previous and next photo, **C** goes back to the
+  calendar, and **D** redraws. On the frame buttons, left and right change the photo and holding left
+  goes back to the calendar.
+- **Fit**: *Fill* crops the photo to cover the whole panel. *Whole photo* shows all of it, with white
+  bars. Photos follow the orientation setting.
+
+The panel has only six inks, so photos are drawn as fine dot patterns (dithering). They look like a
+print in a newspaper from up close and soften from across the room. Bright, simple photos with strong
+colors work best.
+
+**To remove photo mode**, delete `wallcal/photos/` (and `data/photos/` on the Pi if you want the
+pictures gone). The rest of the app checks whether that folder exists, so nothing else needs editing.
 
 ---
 
