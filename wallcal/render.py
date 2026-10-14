@@ -253,7 +253,6 @@ def render(inp: RenderInput) -> Image.Image:
     ev_px, line_h = EVENT_SIZES[s.event_text_size]
     f_ev = font(SANS, ev_px)
     f_ev_b = font(SANS_BOLD, ev_px)
-    f_more = font(SANS_ITALIC, ev_px - 1)
     pad = 9
     cell_head = num_size + 16
 
@@ -284,13 +283,14 @@ def render(inp: RenderInput) -> Image.Image:
             placed.append((ev, lane, (a - w0).days, (b - w0).days))
 
         # Per day: which rows are taken by bars, where timed events go, and how
-        # many rows are visible before we need a "+N more" line.
+        # many events didn't fit (counted as "+N" in the cell's top-right corner).
         limit = [capacity] * 7
         for c, day in enumerate(week):
             x_l, x_r = xs[c], xs[c + 1]
-            _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad, holidays.get(day), holiday_ink.get(day), f_hol)
             if not shows_events(day):
                 limit[c] = 0
+                _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad,
+                            holidays.get(day), holiday_ink.get(day), f_hol)
                 continue
             lane_rows = {lane for ev, lane, a, b in placed if a <= c <= b}
             day_timed = timed.get(day, [])
@@ -313,13 +313,15 @@ def render(inp: RenderInput) -> Image.Image:
 
             starts, sizes, used = layout(want)
             # Too crowded: un-wrap titles, latest first, before hiding anything.
+            # If even all-single-line doesn't fit, every title ends up on one line.
             while used > capacity and 2 in want:
                 want[len(want) - 1 - want[::-1].index(2)] = 1
                 starts, sizes, used = layout(want)
-            if used > capacity:
-                limit[c] = capacity - 1
             hidden = sum(1 for row in lane_rows if row >= limit[c])
             hidden += sum(1 for row in starts if row >= limit[c])
+            _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad,
+                        holidays.get(day), holiday_ink.get(day), f_hol,
+                        more=f"+{hidden}" if hidden else "", f_more=f_ev_b)
 
             for ev, (time_txt, lines), row, h in zip(day_timed, texts, starts, sizes):
                 if row >= limit[c]:
@@ -328,9 +330,6 @@ def render(inp: RenderInput) -> Image.Image:
                     lines = _timed_text(draw, ev, x_r - x_l - 2 * pad, s, f_ev, f_ev_b, wrap=False)[1]
                 _timed_line(draw, time_txt, lines, x_l + pad, ev_top + row * line_h, line_h,
                             colors[ev.calendar_id], f_ev, f_ev_b)
-            if hidden:
-                y = ev_top + limit[c] * line_h + line_h / 2
-                draw.text((x_l + pad, y), f"+{hidden} more", font=f_more, fill=BLACK, anchor="lm")
 
         # Bars are drawn last so they run continuously over the grid lines.
         for ev, lane, a, b in placed:
@@ -354,7 +353,8 @@ def render(inp: RenderInput) -> Image.Image:
     return img
 
 
-def _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad, holiday_names, holiday_ink, f_hol):
+def _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad, holiday_names, holiday_ink, f_hol,
+                more="", f_more=None):
     text = str(day.day)
     x, y = x_l + pad + 2, y_top + 8
     color = holiday_ink if holiday_names else accent if day.weekday() == 6 else BLACK
@@ -372,9 +372,13 @@ def _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad,
         bbox = (left, top, left + w, top + h)
         color = accent_ink
     draw.text((x, y), text, font=f_num, fill=color, anchor="lt")
+    label_r = x_r - pad
+    if more:  # count of events that didn't fit, in the top-right corner
+        draw.text((label_r, (bbox[1] + bbox[3]) / 2), more, font=f_more, fill=BLACK, anchor="rm")
+        label_r -= draw.textlength(more, font=f_more) + 12
     if holiday_names:
         hx = bbox[2] + 16
-        label = fit(draw, " · ".join(holiday_names), f_hol, x_r - pad - hx)
+        label = fit(draw, " · ".join(holiday_names), f_hol, label_r - hx)
         draw.text((hx, (bbox[1] + bbox[3]) / 2), label, font=f_hol,
                   fill=holiday_ink if day.month == inp.month else BLACK, anchor="lm")
 
