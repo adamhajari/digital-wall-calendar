@@ -223,7 +223,7 @@ Then create the venv with `python3 -m venv .venv && .venv/bin/pip install -r req
 
 ## 4. Start automatically on boot
 
-On the Pi:
+On the Pi: 
 
 ```bash
 ~/wallcal/scripts/install-service.sh
