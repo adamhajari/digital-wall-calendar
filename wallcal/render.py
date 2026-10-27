@@ -2,6 +2,8 @@
 
 Everything is drawn with the six pure panel colors and with font
 anti-aliasing off, so the result can go to the e-ink panel as-is.
+The rolling week view starts at the current week and spans this month
+and the next, without the small previous/next month calendars.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
 from functools import lru_cache
+from itertools import accumulate
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -40,6 +43,7 @@ class RenderInput:
     calendars: list[CalendarConfig]  # visible calendars, with effective colors
     settings: Settings
     warning: str = ""  # shown small in the footer, e.g. when sync is failing
+    rolling: bool = False  # current week on top, spanning this month and the next
 
 
 def logical_size(settings: Settings) -> tuple[int, int]:
@@ -132,6 +136,38 @@ def fmt_time(t, fmt: str) -> str:
 ink_on = palette.text_on
 
 
+def _next_month(year: int, month: int) -> tuple[int, int]:
+    return (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def rolling_weeks(today: date, week_start: str) -> list[list[date]]:
+    """Weeks for the rolling view: the week containing today on top, then the
+    weeks after it. Five rows, or six when that's what it takes to reach the next month.
+
+    Called with the current date whenever the calendar draws, so the top row
+    moves to the new week on the morning that week starts."""
+    first_wd = 6 if week_start == "sunday" else 0
+    start = today - timedelta(days=(today.weekday() - first_wd) % 7)
+    ny, nm = _next_month(today.year, today.month)
+    n = 5
+    while start + timedelta(days=n * 7 - 1) < date(ny, nm, 1):
+        n += 1
+    return [[start + timedelta(days=r * 7 + c) for c in range(7)] for r in range(n)]
+
+
+def rolling_title(year: int, month: int) -> tuple[str, str]:
+    """Month line and year line for a view that spans this month and the next."""
+    ny, nm = _next_month(year, month)
+    name = f"{calendar.month_name[month]} – {calendar.month_name[nm]}"
+    years = str(year) if ny == year else f"{year} – {ny}"
+    return name, years
+
+
+def rolling_label(year: int, month: int) -> str:
+    name, years = rolling_title(year, month)
+    return f"{name} {years}"
+
+
 # --------------------------------------------------------------------------- layout
 
 
@@ -159,8 +195,10 @@ def render(inp: RenderInput) -> Image.Image:
     if has_title:
         spaced(draw, (W / 2, top + 12), s.title.strip().upper(), font(SANS_BOLD, 22), BLACK, 5)
 
+    # The rolling view names both months in the title, so the little
+    # previous/next month calendars would only repeat that.
     mini_w = 7 * 27
-    if s.show_mini_months:
+    if s.show_mini_months and not inp.rolling:
         prev_m = date(inp.year, inp.month, 1) - timedelta(days=1)
         next_m = date(inp.year, inp.month, 28) + timedelta(days=7)
         mini_y = top + header_h - 162
@@ -170,8 +208,14 @@ def render(inp: RenderInput) -> Image.Image:
     else:
         name_space = right - left
 
-    month_name = calendar.month_name[inp.month]
-    year_txt = str(inp.year)
+    if inp.rolling:
+        focus_year, focus_month = inp.today.year, inp.today.month
+        focus = {(focus_year, focus_month), _next_month(focus_year, focus_month)}
+        month_name, year_txt = rolling_title(focus_year, focus_month)
+    else:
+        focus = {(inp.year, inp.month)}
+        month_name = calendar.month_name[inp.month]
+        year_txt = str(inp.year)
     size = 150 if portrait else 112
     while True:
         f_month, f_year = font(TITLE_FONT, size), font(SERIF_BOLD, int(size * 0.55))
@@ -194,7 +238,10 @@ def render(inp: RenderInput) -> Image.Image:
 
     # --------------------------------------------------------------- weekdays
     first_wd = 6 if s.week_start == "sunday" else 0
-    weeks = calendar.Calendar(firstweekday=first_wd).monthdatescalendar(inp.year, inp.month)
+    if inp.rolling:
+        weeks = rolling_weeks(inp.today, s.week_start)
+    else:
+        weeks = calendar.Calendar(firstweekday=first_wd).monthdatescalendar(inp.year, inp.month)
     col_w = (right - left) / 7
     xs = [round(left + i * col_w) for i in range(8)]
 
@@ -207,22 +254,6 @@ def render(inp: RenderInput) -> Image.Image:
     for i, n in enumerate(names):
         is_sun = (first_wd + i) % 7 == 6
         spaced(draw, ((xs[i] + xs[i + 1]) / 2, wd_y), n, f_wd, accent if is_sun else BLACK, tracking)
-
-    # ------------------------------------------------------------------- grid
-    grid_top = round(rule_y + 9 + weekday_h)
-    grid_bottom = H - footer_h - s.margin_top_bottom
-    row_h = (grid_bottom - grid_top) / len(weeks)
-    ys = [round(grid_top + i * row_h) for i in range(len(weeks) + 1)]
-
-    for r, week in enumerate(weeks):
-        for c, day in enumerate(week):
-            if day.month != inp.month:
-                shade(img, (xs[c] + 1, ys[r] + 1, xs[c + 1], ys[r + 1]))
-    for x in xs[1:-1]:
-        draw.line((x, grid_top, x, grid_bottom), fill=BLACK, width=2)
-    for y in ys[1:-1]:
-        draw.line((left, y, right, y), fill=BLACK, width=2)
-    draw.rectangle((left, grid_top, right, grid_bottom), outline=BLACK, width=3)
 
     # ----------------------------------------------------------------- events
     holidays: dict[date, list[str]] = {}
@@ -247,6 +278,14 @@ def render(inp: RenderInput) -> Image.Image:
         lst.sort(key=lambda e: (e.start, e.title))
     spanning.sort(key=lambda e: (e.first_day, -(e.last_day - e.first_day).days, e.title))
 
+    def shows_events(day: date) -> bool:
+        return (day.year, day.month) in focus or s.show_adjacent_events
+
+    # ------------------------------------------------------------------- grid
+    grid_top = round(rule_y + 9 + weekday_h)
+    grid_bottom = H - footer_h - s.margin_top_bottom
+    row_h = (grid_bottom - grid_top) / len(weeks)
+
     num_size = max(26, min(40, round(row_h * 0.2)))
     f_num = font(SERIF_BOLD, num_size)
     f_hol = font(SERIF_ITALIC, 21)
@@ -256,71 +295,78 @@ def render(inp: RenderInput) -> Image.Image:
     pad = 9
     cell_head = num_size + 16
 
-    def shows_events(day: date) -> bool:
-        return day.month == inp.month or s.show_adjacent_events
+    def capacity(h: float) -> int:
+        return int((h - 4 - cell_head) // line_h)
 
+    heights = [row_h] * len(weeks)
+    if inp.rolling:
+        # Make the current week tall enough to show all its events on one line
+        # each: first with a line of the footer when there's no warning, then a
+        # line at a time from the weeks furthest away (which may then show "+N").
+        placed = _lanes(spanning, weeks[0])
+        need = 0
+        for c, day in enumerate(weeks[0]):
+            if shows_events(day):
+                lane_rows = {lane for ev, lane, a, b in placed if a <= c <= b}
+                need = max(need, _stack([1] * len(timed.get(day, [])), lane_rows)[2])
+        extra = need - capacity(row_h)
+        if extra > 0 and not inp.warning:
+            grid_bottom += line_h
+            heights[0] += line_h
+            extra -= 1
+        while extra > 0:
+            donors = [r for r in range(len(weeks) - 1, 0, -1) if capacity(heights[r] - line_h) >= 1]
+            if not donors:
+                break
+            for r in donors[:extra]:
+                heights[r] -= line_h
+                heights[0] += line_h
+                extra -= 1
+    ys = [round(y) for y in accumulate(heights, initial=grid_top)]
+
+    for r, week in enumerate(weeks):
+        for c, day in enumerate(week):
+            if (day.year, day.month) not in focus:
+                shade(img, (xs[c] + 1, ys[r] + 1, xs[c + 1], ys[r + 1]))
+    for x in xs[1:-1]:
+        draw.line((x, grid_top, x, grid_bottom), fill=BLACK, width=2)
+    for y in ys[1:-1]:
+        draw.line((left, y, right, y), fill=BLACK, width=2)
+    draw.rectangle((left, grid_top, right, grid_bottom), outline=BLACK, width=3)
+
+    # ------------------------------------------------------- events in the grid
     for r, week in enumerate(weeks):
         y_top, y_bot = ys[r], ys[r + 1]
         ev_top = y_top + cell_head
-        capacity = max(1, int((y_bot - 4 - ev_top) // line_h))
-        w0, w6 = week[0], week[-1]
-
-        # Assign each all-day / multi-day event in this week to a lane so its
-        # bar stays on one row across the days it covers.
-        lanes_end: list[date] = []
-        placed: list[tuple[Event, int, int, int]] = []  # (event, lane, first col, last col)
-        for ev in spanning:
-            if ev.last_day < w0 or ev.first_day > w6:
-                continue
-            a, b = max(ev.first_day, w0), min(ev.last_day, w6)
-            for lane, end in enumerate(lanes_end):
-                if end < a:
-                    lanes_end[lane] = b
-                    break
-            else:
-                lane = len(lanes_end)
-                lanes_end.append(b)
-            placed.append((ev, lane, (a - w0).days, (b - w0).days))
+        placed = _lanes(spanning, week)
 
         # Per day: which rows are taken by bars, where timed events go, and how
         # many events didn't fit (counted as "+N" in the cell's top-right corner).
-        limit = [capacity] * 7
+        limit = [max(1, capacity(y_bot - y_top))] * 7
         for c, day in enumerate(week):
             x_l, x_r = xs[c], xs[c + 1]
             if not shows_events(day):
                 limit[c] = 0
                 _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad,
-                            holidays.get(day), holiday_ink.get(day), f_hol)
+                            holidays.get(day), holiday_ink.get(day), f_hol,
+                            in_month=(day.year, day.month) in focus)
                 continue
             lane_rows = {lane for ev, lane, a, b in placed if a <= c <= b}
             day_timed = timed.get(day, [])
             texts = [_timed_text(draw, ev, x_r - x_l - 2 * pad, s, f_ev, f_ev_b) for ev in day_timed]
             want = [len(lines) for _, lines in texts]
 
-            def layout(heights):
-                """Stack timed events into the rows not taken by bars."""
-                starts, sizes, row = [], [], 0
-                for h in heights:
-                    while row in lane_rows:
-                        row += 1
-                    if h == 2 and row + 1 in lane_rows:
-                        h = 1
-                    starts.append(row)
-                    sizes.append(h)
-                    row += h
-                used = max([*(r + 1 for r in lane_rows), *(a + h for a, h in zip(starts, sizes))], default=0)
-                return starts, sizes, used
-
-            starts, sizes, used = layout(want)
+            starts, sizes, used = _stack(want, lane_rows)
             # Too crowded: un-wrap titles, latest first, before hiding anything.
             # If even all-single-line doesn't fit, every title ends up on one line.
-            while used > capacity and 2 in want:
+            while used > limit[c] and 2 in want:
                 want[len(want) - 1 - want[::-1].index(2)] = 1
-                starts, sizes, used = layout(want)
+                starts, sizes, used = _stack(want, lane_rows)
             hidden = sum(1 for row in lane_rows if row >= limit[c])
             hidden += sum(1 for row in starts if row >= limit[c])
             _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad,
                         holidays.get(day), holiday_ink.get(day), f_hol,
+                        in_month=(day.year, day.month) in focus,
                         more=f"+{hidden}" if hidden else "", f_more=f_ev_b)
 
             for ev, (time_txt, lines), row, h in zip(day_timed, texts, starts, sizes):
@@ -353,12 +399,49 @@ def render(inp: RenderInput) -> Image.Image:
     return img
 
 
+def _lanes(spanning: list[Event], week: list[date]) -> list[tuple[Event, int, int, int]]:
+    """Assign each all-day / multi-day event in this week to a lane so its bar
+    stays on one row across the days it covers: (event, lane, first col, last col)."""
+    w0, w6 = week[0], week[-1]
+    lanes_end: list[date] = []
+    placed = []
+    for ev in spanning:
+        if ev.last_day < w0 or ev.first_day > w6:
+            continue
+        a, b = max(ev.first_day, w0), min(ev.last_day, w6)
+        for lane, end in enumerate(lanes_end):
+            if end < a:
+                lanes_end[lane] = b
+                break
+        else:
+            lane = len(lanes_end)
+            lanes_end.append(b)
+        placed.append((ev, lane, (a - w0).days, (b - w0).days))
+    return placed
+
+
+def _stack(heights: list[int], lane_rows: set[int]) -> tuple[list[int], list[int], int]:
+    """Stack timed events (1 or 2 lines each) into the rows not taken by bars:
+    (first row of each, lines of each, rows used in all)."""
+    starts, sizes, row = [], [], 0
+    for h in heights:
+        while row in lane_rows:
+            row += 1
+        if h == 2 and row + 1 in lane_rows:
+            h = 1
+        starts.append(row)
+        sizes.append(h)
+        row += h
+    used = max([*(r + 1 for r in lane_rows), *(a + h for a, h in zip(starts, sizes))], default=0)
+    return starts, sizes, used
+
+
 def _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad, holiday_names, holiday_ink, f_hol,
-                more="", f_more=None):
+                in_month=True, more="", f_more=None):
     text = str(day.day)
     x, y = x_l + pad + 2, y_top + 8
     color = holiday_ink if holiday_names else accent if day.weekday() == 6 else BLACK
-    if day.month != inp.month:
+    if not in_month:
         color = BLACK
     bbox = draw.textbbox((x, y), text, font=f_num, anchor="lt")
     if day == inp.today:
@@ -380,7 +463,7 @@ def _day_number(draw, x_l, y_top, x_r, day, inp, accent, accent_ink, f_num, pad,
         hx = bbox[2] + 16
         label = fit(draw, " · ".join(holiday_names), f_hol, label_r - hx)
         draw.text((hx, (bbox[1] + bbox[3]) / 2), label, font=f_hol,
-                  fill=holiday_ink if day.month == inp.month else BLACK, anchor="lm")
+                  fill=holiday_ink if in_month else BLACK, anchor="lm")
 
 
 BULLET = 10  # colored square before each timed event

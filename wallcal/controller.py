@@ -109,7 +109,8 @@ class Controller:
         self._render_asked = 0
         self._render_done = 0
 
-        # Which month is shown. None means "the current month" (the default).
+        # Which month is shown over the home view. None means home: the rolling
+        # week when that mode is on, otherwise the current month.
         self.view: tuple[int, int] | None = None
         self._view_set_at = 0.0
 
@@ -169,29 +170,50 @@ class Controller:
         return self.view or (t.year, t.month)
 
     def navigate(self, action: str, month: str | None = None) -> None:
-        """action: prev | next | today | set (with month='YYYY-MM')."""
+        """action: prev | next | today | set (with month='YYYY-MM') | rolling.
+
+        Rolling week is a home mode: the current week stays on top and the mode
+        stays on until it's turned off. Prev from there opens the current month,
+        next opens the next month, and Today (or the return timer) comes back to it.
+        """
         alt = self._active_alt()
         if alt and action != "set" and alt.navigate(action):
             self.settings_changed()
+            return
+        if action == "rolling":
+            # Showing the rolling week already: turn the mode off. Otherwise turn
+            # it on and come back to it, even if a month was on screen.
+            with self._lock:
+                showing = self._showing_rolling()
+            self.settings.update({"rolling_week": not showing})
+            with self._lock:
+                self.view = None
+                self._view_set_at = time.monotonic()
+                self._note_input()
+            self._wake.set()
             return
         with self._lock:
             t = self.today()
             current = (t.year, t.month)
             y, m = self.view or current
-            if action == "prev":
-                target = add_months(y, m, -1)
+            mode = self.settings.get().rolling_week
+            if action == "prev" and self._showing_rolling():
+                self.view = current  # the mode stays on; this month is a visit
+            elif action == "next" and self._showing_rolling():
+                self.view = add_months(*current, 1)
+            elif action == "prev":
+                self.view = self._month_view(add_months(y, m, -1), current, mode)
             elif action == "next":
-                target = add_months(y, m, 1)
+                self.view = self._month_view(add_months(y, m, 1), current, mode)
             elif action == "today":
-                target = current
+                self.view = None
             elif action == "set" and month:
                 yy, mm = (int(p) for p in month.split("-")[:2])
                 if not 1 <= mm <= 12:
                     raise ValueError("month must be YYYY-MM")
-                target = (yy, mm)
+                self.view = self._month_view((yy, mm), current, mode)
             else:
                 raise ValueError(f"Unknown action {action!r}")
-            self.view = None if target == current else target
             self._view_set_at = time.monotonic()
             self._note_input()
         self._wake.set()
@@ -237,16 +259,19 @@ class Controller:
         with self._lock:
             y, m = self.shown_month()
             s = self.settings.get()
+            showing_rolling = s.rolling_week and self.view is None
+            browsing = self.view is not None
             returns_in = None
-            if self.view and s.return_to_today_minutes:
+            if browsing and s.return_to_today_minutes:
                 returns_in = max(0, int(self._view_set_at + s.return_to_today_minutes * 60 - time.monotonic()))
             alt = self._active_alt()
             return {
                 "screen": alt.name if alt else "calendar",
                 "alt_screen": self.alt_screen.status() if self.alt_screen else None,
                 "month": f"{y:04d}-{m:02d}",
-                "month_label": f"{calendar.month_name[m]} {y}",
-                "is_current": self.view is None,
+                "month_label": render_mod.rolling_label(y, m) if showing_rolling else f"{calendar.month_name[m]} {y}",
+                "view_mode": "rolling" if showing_rolling else "month",
+                "is_current": not browsing,
                 "returns_to_today_in": returns_in,
                 "today": self.today().isoformat(),
                 "source": self.cfg.source,
@@ -293,11 +318,13 @@ class Controller:
     def _tick(self) -> None:
         s = self.settings.get()
         with self._lock:
-            if self.view and s.return_to_today_minutes:
+            # A visited month times out back to home. Rolling week is home while
+            # that mode is on, so the timer returns to it instead of leaving it.
+            if self.view is not None and s.return_to_today_minutes:
                 if time.monotonic() - self._view_set_at > s.return_to_today_minutes * 60:
-                    log.info("Returning to the current month")
+                    log.info("Returning to the %s", "rolling week" if s.rolling_week else "current month")
                     self.view = None
-            need = self._needed_range()
+            need = self._needed_range(s.week_start)
             due = time.monotonic() >= self._next_sync
             new_range = not _covers(self.events_range, need) and not _covers(self._attempted_range, need)
         if new_range:
@@ -308,8 +335,22 @@ class Controller:
                 self._sync(self._fetch_range())
         self._maybe_render()
 
-    def _needed_range(self) -> tuple[date, date]:
-        """Every day that can appear in the month grid (with some slack)."""
+    def _showing_rolling(self) -> bool:
+        """True when the rolling-week mode is on and no month is being visited."""
+        return self.settings.get().rolling_week and self.view is None
+
+    @staticmethod
+    def _month_view(target: tuple[int, int], current: tuple[int, int], rolling_mode: bool) -> tuple[int, int] | None:
+        """None means home. In rolling mode the current month is a visit, not home."""
+        if rolling_mode or target != current:
+            return target
+        return None
+
+    def _needed_range(self, week_start: str) -> tuple[date, date]:
+        """Every day that can appear in the grid (with some slack)."""
+        if self._showing_rolling():
+            weeks = render_mod.rolling_weeks(self.today(), week_start)
+            return weeks[0][0] - timedelta(days=1), weeks[-1][-1] + timedelta(days=1)
         y, m = self.shown_month()
         first = date(y, m, 1)
         ny, nm = add_months(y, m, 1)
@@ -371,9 +412,12 @@ class Controller:
                 for c in self.source.calendars if c.id not in hidden
             ]
             warning = self._stale_warning()
-            lo, hi = self._needed_range()
+            # today is part of the key, so the rolling grid is drawn again when the
+            # date changes. A new week puts that week on the top row.
+            rolling = s.rolling_week and self.view is None
+            lo, hi = self._needed_range(s.week_start)
             events = tuple(e for e in self.events if e.last_day >= lo and e.first_day <= hi)
-            key = (y, m, today, events, json.dumps(asdict(s), sort_keys=True),
+            key = (y, m, rolling, today, events, json.dumps(asdict(s), sort_keys=True),
                    repr(calendars), warning, self._render_mtime)
             urgent = self._user_change
             self._user_change = False
@@ -386,7 +430,7 @@ class Controller:
         try:
             img = render_mod.render(render_mod.RenderInput(
                 year=y, month=m, today=today, events=list(events),
-                calendars=calendars, settings=s, warning=warning,
+                calendars=calendars, settings=s, warning=warning, rolling=rolling,
             ))
         except Exception as e:
             log.exception("Render failed")
@@ -394,7 +438,10 @@ class Controller:
                 self.render_error = f"{type(e).__name__}: {e}"
             return
 
-        log.info("Rendered %04d-%02d (%d events)", y, m, len(events))
+        if rolling:
+            log.info("Rendered rolling week %04d-%02d (%d events)", y, m, len(events))
+        else:
+            log.info("Rendered %04d-%02d (%d events)", y, m, len(events))
         self._show(img, s, force, urgent)
 
     def _render_alt(self, alt: AltScreen, s: Settings) -> None:

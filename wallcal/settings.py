@@ -33,9 +33,14 @@ class Settings:
     wrap_event_titles: bool = True  # use a second line for long titles when the day has room
     show_mini_months: bool = True
     show_adjacent_events: bool = True  # events on the grayed days of prev/next month
-    # When you browse to another month, jump back to the current one after this
-    # many minutes (0 = stay until you press "Today").
+    # When you browse to another month, jump back to the home view after this
+    # many minutes (0 = stay until you press "Today"). Home is the current month,
+    # or the rolling week when that mode is on.
     return_to_today_minutes: int = 30
+    # Home view: the current week on top, spanning this month and the next.
+    # Stays on until turned off, including across restarts, and the top week
+    # moves forward when a new week begins.
+    rolling_week: bool = False
     # Extra blank space around the calendar (pixels), e.g. so a picture frame's
     # mat doesn't cover the edges. Added to the built-in 32px margin.
     margin_sides: int = 0
